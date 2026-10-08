@@ -118,7 +118,7 @@ dns-health-analyzer/
 
 ---
 
-## 🚀 Running the Backend (Phase 2)
+## 🚀 Running the Backend & Environment Setup
 
 ### 1. Setup Virtual Environment & Install Dependencies
 
@@ -129,7 +129,52 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Start the Development Server
+### 2. MongoDB Setup & Configuration
+
+This project uses **MongoDB** as its persistence layer. The connection string is managed dynamically via environment variables to ensure zero hardcoded secrets.
+
+#### Environment Setup
+Create a `.env` file in the `backend/` directory:
+```bash
+cp .env.example .env
+```
+
+Set your configuration in `backend/.env`:
+```env
+# Local MongoDB instance:
+MONGODB_URL=mongodb://localhost:27017
+DATABASE_NAME=dns_health
+
+# Or MongoDB Atlas cluster:
+# MONGODB_URL=mongodb+srv://<username>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority
+```
+
+#### How to run MongoDB locally (Options):
+- **Option A (Homebrew on macOS)**:
+  ```bash
+  brew tap mongodb/brew
+  brew install mongodb-community
+  brew services start mongodb-community
+  ```
+- **Option B (Docker)**:
+  ```bash
+  docker run -d --name mongodb -p 27017:27017 mongo:latest
+  ```
+- **Option C (Free Cloud MongoDB Atlas)**:
+  Create a free M0 sandbox cluster on [mongodb.com/atlas](https://www.mongodb.com/atlas) and paste the connection URI into `backend/.env`.
+
+#### Test MongoDB Connectivity
+```bash
+python -m app.database.check_connection
+```
+
+### 3. Run Unit Tests
+
+```bash
+pytest -v
+```
+
+### 4. Start the Development Server
 
 ```bash
 uvicorn app.main:app --reload
@@ -137,9 +182,37 @@ uvicorn app.main:app --reload
 
 The server will start at `http://127.0.0.1:8000`.
 
-### 3. Available Endpoints
+### 5. Available Endpoints
 
 - **Root (Status)**: `http://127.0.0.1:8000/`
 - **Health Check**: `http://127.0.0.1:8000/health`
 - **Interactive API Docs (Swagger UI)**: `http://127.0.0.1:8000/docs`
+
+---
+
+## 💻 Running the Frontend Dashboard (React + Vite + Tailwind)
+
+### 1. Install Node Dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 2. Configure Environment
+
+Create `frontend/.env`:
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+### 3. Start Development Server
+
+```bash
+npm run dev
+```
+
+The frontend dashboard will be available at `http://localhost:5173`.
+
+
 

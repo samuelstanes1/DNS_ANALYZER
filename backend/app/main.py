@@ -6,6 +6,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.api.analysis import router as analysis_router
 from app.database.mongodb import db_manager
 
@@ -40,6 +42,15 @@ app = FastAPI(
     description="Backend service for DNS health diagnostics, record verification, and monitoring.",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# Enable CORS for local frontend development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Register API routes
