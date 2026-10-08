@@ -26,6 +26,7 @@ class MongoDBManager:
     def __init__(self):
         self.client: Optional[AsyncIOMotorClient] = None
         self.db: Optional[AsyncIOMotorDatabase] = None
+        self.last_error: Optional[str] = None
 
     def get_connection_url(self) -> str:
         """Fetch MongoDB URL from environment variables."""
@@ -37,26 +38,29 @@ class MongoDBManager:
 
     async def connect(self, mongodb_url: Optional[str] = None, database_name: Optional[str] = None) -> bool:
         """Initialize the AsyncIOMotorClient connection."""
-        url = mongodb_url or self.get_connection_url()
-        db_name = database_name or self.get_database_name()
+        url = mongodb_url if mongodb_url is not None else self.get_connection_url()
+        db_name = database_name if database_name is not None else self.get_database_name()
 
-        if not url:
-            # URL is not configured yet in environment
+        if not url or not url.strip():
+            self.last_error = "MONGODB_URL is empty or not set"
             return False
 
         try:
             self.client = AsyncIOMotorClient(
                 url,
-                serverSelectionTimeoutMS=3000,
-                connectTimeoutMS=3000,
+                serverSelectionTimeoutMS=4000,
+                connectTimeoutMS=4000,
             )
             self.db = self.client[db_name]
             # Verify connectivity with a quick ping
             await self.client.admin.command("ping")
+            self.last_error = None
             return True
-        except pymongo.errors.PyMongoError:
+        except pymongo.errors.PyMongoError as e:
+            self.last_error = str(e)
             return False
-        except Exception:
+        except Exception as e:
+            self.last_error = str(e)
             return False
 
     async def close(self) -> None:

@@ -22,16 +22,20 @@ async def main():
         return
 
     print("\nAttempting connection to MongoDB...")
-    connected = await manager.connect()
-
-    if connected:
-        print("[✓] Successfully connected to MongoDB!")
-        print("[✓] Ping check: PASSED")
-        collection = manager.get_analysis_collection()
-        print(f"[✓] Analysis Collection '{collection.name}' is ready.")
-    else:
-        print("[✗] Failed to connect to MongoDB.")
-        print("    Please verify that your MongoDB service is running and the connection string is valid.")
+    try:
+        connected = await manager.connect()
+        if connected:
+            print("[✓] Successfully connected to MongoDB!")
+            print("[✓] Ping check: PASSED")
+            collection = manager.get_analysis_collection()
+            print(f"[✓] Analysis Collection '{collection.name}' is ready.")
+        else:
+            print("[✗] Failed to connect to MongoDB.")
+            if manager.last_error:
+                print(f"    Reason: {manager.last_error}")
+            print("    Please verify that your credentials and Network Access (IP whitelist) are valid.")
+    except Exception as e:
+        print(f"[✗] Connection Error: {e}")
 
     await manager.close()
     print("=" * 50)
