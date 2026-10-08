@@ -56,6 +56,16 @@ class AnalysisCreateResponse(BaseModel):
     created_at: datetime
 
 
+class AnalysisDetailResponse(BaseModel):
+    """Detailed response schema returned when fetching an analysis by ID."""
+
+    analysis_id: str
+    domain: str
+    status: str
+    dns_analysis: Dict[str, Any]
+    created_at: datetime
+
+
 class DNSAnalysisDocument(BaseModel):
     """MongoDB Document schema for storing DNS Health Analysis results."""
 

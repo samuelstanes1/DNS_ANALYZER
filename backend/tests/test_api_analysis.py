@@ -1,4 +1,4 @@
-"""API tests for POST /analysis endpoint."""
+"""API tests for POST /analysis and GET /analysis/{analysis_id} endpoints."""
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -6,6 +6,7 @@ from mongomock_motor import AsyncMongoMockClient
 
 from app.main import app
 from app.database.mongodb import db_manager
+from app.models.analysis import DNSAnalysisDocument
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +18,11 @@ def setup_mock_db():
     yield
     db_manager.client = None
     db_manager.db = None
+
+
+# ---------------------------------------------------------------------------
+# POST /analysis Tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -34,7 +40,7 @@ async def test_start_dns_analysis_valid_request():
     assert data["health_status"] in ("HEALTHY", "DEGRADED", "UNRESOLVABLE")
     assert "created_at" in data
 
-    # Verify that the document is saved in MongoDB mock collection
+    # Verify document in collection
     collection = db_manager.get_analysis_collection()
     doc = await collection.find_one({"analysis_id": data["analysis_id"]})
     assert doc is not None
@@ -79,7 +85,6 @@ async def test_start_dns_analysis_malformed_payload():
 @pytest.mark.anyio
 async def test_start_dns_analysis_db_unavailable():
     """Test POST /analysis handles database failure gracefully without exposing stack trace."""
-    # Force db collection to be None to simulate unavailable DB
     db_manager.db = None
     db_manager.client = None
 
@@ -90,3 +95,100 @@ async def test_start_dns_analysis_db_unavailable():
     assert response.status_code == 503
     data = response.json()
     assert data["detail"] == "Database storage is currently unavailable."
+
+
+# ---------------------------------------------------------------------------
+# GET /analysis/{analysis_id} Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_analysis_existing_id():
+    """Test GET /analysis/{analysis_id} for an existing record."""
+    # Pre-seed document in mock database
+    sample_doc = DNSAnalysisDocument(
+        analysis_id="test-analysis-123",
+        domain="example.com",
+        status="HEALTHY",
+        dns_analysis={
+            "domain": "example.com",
+            "is_resolvable": True,
+            "status": "HEALTHY",
+            "records": {"A": ["93.184.216.34"], "NS": ["a.iana-servers.net."]},
+            "errors": {},
+            "response_time_ms": 15.2,
+        },
+    )
+    collection = db_manager.get_analysis_collection()
+    await collection.insert_one(sample_doc.to_mongo_dict())
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/analysis/test-analysis-123")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["analysis_id"] == "test-analysis-123"
+    assert data["domain"] == "example.com"
+    assert data["status"] == "HEALTHY"
+    assert "dns_analysis" in data
+    assert data["dns_analysis"]["records"]["A"] == ["93.184.216.34"]
+    # Ensure MongoDB internal _id is NOT exposed
+    assert "_id" not in data
+
+
+@pytest.mark.anyio
+async def test_get_analysis_non_existing_id():
+    """Test GET /analysis/{analysis_id} for a non-existent ID returns 404."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/analysis/non-existent-uuid-999")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_get_analysis_db_unavailable():
+    """Test GET /analysis/{analysis_id} handles DB unavailable cleanly."""
+    db_manager.db = None
+    db_manager.client = None
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/analysis/some-id")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["detail"] == "Database storage is currently unavailable."
+
+
+# ---------------------------------------------------------------------------
+# End-to-End Flow Test (POST -> GET)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_full_analysis_workflow_post_then_get():
+    """Verify complete flow: POST domain -> get analysis_id -> GET by analysis_id."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Initiate analysis
+        post_res = await client.post("/analysis", json={"domain": "google.com"})
+        assert post_res.status_code == 201
+        post_data = post_res.json()
+        analysis_id = post_data["analysis_id"]
+        assert analysis_id is not None
+
+        # 2. Retrieve analysis using generated ID
+        get_res = await client.get(f"/analysis/{analysis_id}")
+        assert get_res.status_code == 200
+        get_data = get_res.json()
+
+        assert get_data["analysis_id"] == analysis_id
+        assert get_data["domain"] == "google.com"
+        assert get_data["status"] in ("HEALTHY", "DEGRADED", "UNRESOLVABLE")
+        assert "dns_analysis" in get_data
+        assert "A" in get_data["dns_analysis"]["records"]
+        assert len(get_data["dns_analysis"]["records"]["A"]) > 0
