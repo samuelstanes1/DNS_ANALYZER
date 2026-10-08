@@ -1,5 +1,6 @@
 """API tests for POST /analysis and GET /analysis/{analysis_id} endpoints."""
 
+from unittest.mock import patch
 import pytest
 from httpx import AsyncClient, ASGITransport
 from mongomock_motor import AsyncMongoMockClient
@@ -10,12 +11,31 @@ from app.models.analysis import DNSAnalysisDocument
 
 
 @pytest.fixture(autouse=True)
-def setup_mock_db():
-    """Ensure in-memory mock database is used for API tests."""
+def setup_mock_db_and_dns():
+    """Ensure in-memory mock database and mock DNS resolver are used for deterministic tests."""
     mock_client = AsyncMongoMockClient()
     db_manager.client = mock_client
     db_manager.db = mock_client["dns_health"]
-    yield
+
+    mock_dns_result = {
+        "domain": "google.com",
+        "is_resolvable": True,
+        "status": "HEALTHY",
+        "records": {
+            "A": ["142.250.190.46"],
+            "AAAA": ["2404:6800:4009:826::200e"],
+            "MX": ["10 smtp.google.com"],
+            "NS": ["ns1.google.com"],
+            "TXT": ["v=spf1 include:_spf.google.com ~all"],
+            "CNAME": [],
+        },
+        "errors": {},
+        "response_time_ms": 25.4,
+    }
+
+    with patch("app.api.analysis.dns_service.analyze_domain", return_value=mock_dns_result):
+        yield
+
     db_manager.client = None
     db_manager.db = None
 
@@ -37,7 +57,7 @@ async def test_start_dns_analysis_valid_request():
     assert "analysis_id" in data
     assert data["domain"] == "google.com"
     assert data["status"] == "completed"
-    assert data["health_status"] in ("HEALTHY", "DEGRADED", "UNRESOLVABLE")
+    assert data["health_status"] == "HEALTHY"
     assert "created_at" in data
 
     # Verify document in collection
@@ -109,7 +129,6 @@ async def test_start_dns_analysis_db_unavailable():
     assert response.status_code == 503
     data = response.json()
     assert data["detail"] == "Database storage is currently unavailable."
-    # Ensure no internal traceback is returned
     assert "Traceback" not in str(data)
 
 
@@ -202,7 +221,7 @@ async def test_full_analysis_workflow_post_then_get():
 
         assert get_data["analysis_id"] == analysis_id
         assert get_data["domain"] == "google.com"
-        assert get_data["status"] in ("HEALTHY", "DEGRADED", "UNRESOLVABLE")
+        assert get_data["status"] == "HEALTHY"
         assert "dns_analysis" in get_data
         assert "A" in get_data["dns_analysis"]["records"]
         assert len(get_data["dns_analysis"]["records"]["A"]) > 0
