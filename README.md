@@ -115,3 +115,31 @@ dns-health-analyzer/
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 🚀 Running the Backend (Phase 2)
+
+### 1. Setup Virtual Environment & Install Dependencies
+
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Start the Development Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+The server will start at `http://127.0.0.1:8000`.
+
+### 3. Available Endpoints
+
+- **Root (Status)**: `http://127.0.0.1:8000/`
+- **Health Check**: `http://127.0.0.1:8000/health`
+- **Interactive API Docs (Swagger UI)**: `http://127.0.0.1:8000/docs`
+
