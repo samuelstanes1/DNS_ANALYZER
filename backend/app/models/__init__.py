@@ -1,4 +1,4 @@
 """Data models and schemas package."""
-from .analysis import DNSAnalysisDocument
+from .analysis import AnalysisCreateRequest, AnalysisCreateResponse, DNSAnalysisDocument
 
-__all__ = ["DNSAnalysisDocument"]
+__all__ = ["AnalysisCreateRequest", "AnalysisCreateResponse", "DNSAnalysisDocument"]

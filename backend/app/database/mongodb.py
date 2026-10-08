@@ -7,6 +7,7 @@ to prevent hardcoding of sensitive credentials.
 import os
 from typing import Optional
 from dotenv import load_dotenv
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 import pymongo.errors
 
@@ -46,11 +47,15 @@ class MongoDBManager:
             return False
 
         try:
-            self.client = AsyncIOMotorClient(
-                url,
-                serverSelectionTimeoutMS=4000,
-                connectTimeoutMS=4000,
-            )
+            # Configure client with certifi CA bundle for secure SSL/TLS negotiation with Atlas
+            client_kwargs = {
+                "serverSelectionTimeoutMS": 10000,
+                "connectTimeoutMS": 10000,
+            }
+            if "mongodb+srv://" in url or "ssl=true" in url.lower() or "tls=true" in url.lower():
+                client_kwargs["tlsCAFile"] = certifi.where()
+
+            self.client = AsyncIOMotorClient(url, **client_kwargs)
             self.db = self.client[db_name]
             # Verify connectivity with a quick ping
             await self.client.admin.command("ping")
