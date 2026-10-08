@@ -22,6 +22,7 @@ def test_sanitize_domain(service):
     assert service.sanitize_domain("http://sub.domain.org:8080/test") == "sub.domain.org"
     assert service.sanitize_domain("example.com.") == "example.com"
     assert service.sanitize_domain("") == ""
+    assert service.sanitize_domain(None) == ""
 
 
 def test_analyze_empty_or_invalid_domain(service):
@@ -46,22 +47,37 @@ def test_analyze_valid_domain(service):
         assert rtype in result["records"]
         assert isinstance(result["records"][rtype], list)
 
-    # Google always has A and NS records
     assert len(result["records"]["A"]) > 0
     assert len(result["records"]["NS"]) > 0
     assert result["response_time_ms"] > 0
 
 
 def test_analyze_domain_missing_certain_record_types(service):
-    """Test domain that has A records but no MX or CNAME records."""
-    # A standard bare domain usually does not have a CNAME record
+    """Test domain that has A records but no CNAME records."""
     result = service.analyze_domain("example.com")
     assert result["domain"] == "example.com"
     assert result["is_resolvable"] is True
     assert "A" in result["records"]
     assert len(result["records"]["A"]) > 0
-    # CNAME should be an empty list, not causing errors or exceptions
     assert result["records"]["CNAME"] == []
+
+
+def test_single_failed_record_does_not_fail_entire_analysis(service):
+    """Ensure that a timeout on one record type (e.g. TXT) does NOT fail the entire analysis."""
+    original_resolve = service.resolver.resolve
+
+    def mock_resolve(domain, rtype):
+        if rtype == "TXT":
+            raise dns.resolver.Timeout()
+        return original_resolve(domain, rtype)
+
+    with patch.object(service.resolver, "resolve", side_effect=mock_resolve):
+        result = service.analyze_domain("google.com")
+        assert result["is_resolvable"] is True
+        assert result["status"] in ("HEALTHY", "DEGRADED")
+        assert len(result["records"]["A"]) > 0
+        assert "TXT" in result["errors"]
+        assert "timed out" in result["errors"]["TXT"].lower()
 
 
 def test_analyze_non_resolvable_domain(service):
@@ -76,7 +92,7 @@ def test_analyze_non_resolvable_domain(service):
 
 
 def test_handle_timeout_exception(service):
-    """Test safe handling when DNS queries encounter a timeout."""
+    """Test safe handling when all DNS queries encounter a timeout."""
     with patch.object(service.resolver, "resolve", side_effect=dns.resolver.Timeout()):
         result = service.analyze_domain("timeout-domain.com")
         assert result["is_resolvable"] is False

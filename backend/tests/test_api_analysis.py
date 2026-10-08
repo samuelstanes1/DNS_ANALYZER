@@ -49,15 +49,29 @@ async def test_start_dns_analysis_valid_request():
 
 
 @pytest.mark.anyio
-async def test_start_dns_analysis_invalid_domain():
-    """Test POST /analysis with an invalid domain string."""
+@pytest.mark.parametrize(
+    "invalid_domain",
+    [
+        "invalid_domain..com",       # Consecutive dots
+        "google",                    # Missing TLD
+        "-startwithhyphen.com",      # Label starts with hyphen
+        "endwithhyphen-.com",        # Label ends with hyphen
+        "test.c0m",                  # Number in TLD
+        "a" * 64 + ".com",           # Label > 63 chars
+        "",                          # Empty string
+        "   ",                       # Whitespace only
+    ],
+)
+async def test_start_dns_analysis_invalid_domain_variations(invalid_domain):
+    """Test POST /analysis rejects various invalid domain formats with 422."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/analysis", json={"domain": "invalid_domain..com"})
+        response = await client.post("/analysis", json={"domain": invalid_domain})
 
     assert response.status_code == 422
     data = response.json()
     assert "detail" in data
+    assert isinstance(data["detail"], str)
 
 
 @pytest.mark.anyio
@@ -95,6 +109,8 @@ async def test_start_dns_analysis_db_unavailable():
     assert response.status_code == 503
     data = response.json()
     assert data["detail"] == "Database storage is currently unavailable."
+    # Ensure no internal traceback is returned
+    assert "Traceback" not in str(data)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +121,6 @@ async def test_start_dns_analysis_db_unavailable():
 @pytest.mark.anyio
 async def test_get_analysis_existing_id():
     """Test GET /analysis/{analysis_id} for an existing record."""
-    # Pre-seed document in mock database
     sample_doc = DNSAnalysisDocument(
         analysis_id="test-analysis-123",
         domain="example.com",
@@ -133,7 +148,6 @@ async def test_get_analysis_existing_id():
     assert data["status"] == "HEALTHY"
     assert "dns_analysis" in data
     assert data["dns_analysis"]["records"]["A"] == ["93.184.216.34"]
-    # Ensure MongoDB internal _id is NOT exposed
     assert "_id" not in data
 
 
